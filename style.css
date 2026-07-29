@@ -180,3 +180,18 @@ svg.chart { width: 100%; height: auto; display: block; }
   stroke-linecap: round; stroke-linejoin: round; }
 .tab.active { color: var(--cn-blue-300); font-weight: 700; }
 .muted { color: var(--cn-text-mute); font-size: 13px; text-align: center; }
+
+/* ---- desktop: moldura de "aparelho" centralizada (celular fica igual) ---- */
+@media (min-width: 768px) {
+  body { padding: 28px 0 96px; }
+  #app {
+    border: 1px solid var(--cn-card-border-strong);
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .55);
+    min-height: calc(100vh - 124px);
+  }
+  .screen { min-height: calc(100vh - 124px); padding-bottom: 120px; }
+  .login-wrap { min-height: calc(100vh - 124px); }
+  .tabbar { bottom: 22px; }
+}
