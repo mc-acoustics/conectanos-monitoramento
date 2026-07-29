@@ -1,5 +1,5 @@
 /* ConectaNOS PWA — cache do shell (API nunca é cacheada: outra origem). */
-var CACHE = 'conectanos-v1';
+var CACHE = 'conectanos-v2';
 var SHELL = ['./', './index.html', './style.css', './app.js',
              './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
