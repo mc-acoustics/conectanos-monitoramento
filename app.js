@@ -5,7 +5,7 @@
 'use strict';
 
 var TB = 'https://thingsboard.nosconectados.com.br';
-var APP_VERSION = 'v0.1.0 — 2026-07-29';
+var APP_VERSION = 'v0.2.0 — 2026-07-29';
 var POLL_MS = 15000;
 
 var S = {
@@ -15,8 +15,53 @@ var S = {
   current: null,         // deviceId selecionado
   filtroEmp: '',
   filtroSit: '',
-  timer: null
+  timer: null,
+  dashT10: null,         // espectro/KPIs a 10 s (só na tela do sensor)
+  dashT60: null          // re-render do dashboard a 60 s
 };
+
+/* ---- bandas de 1/3 de oitava e curvas NC (NBR 10152) ---- */
+var T31 = [
+  ['t20', '20'], ['t25', '25'], ['t31_5', '31.5'], ['t40', '40'],
+  ['t50', '50'], ['t63', '63'], ['t80', '80'], ['t100', '100'],
+  ['t125', '125'], ['t160', '160'], ['t200', '200'], ['t250', '250'],
+  ['t315', '315'], ['t400', '400'], ['t500', '500'], ['t630', '630'],
+  ['t800', '800'], ['t1000', '1k'], ['t1250', '1.25k'], ['t1600', '1.6k'],
+  ['t2000', '2k'], ['t2500', '2.5k'], ['t3150', '3.15k'], ['t4000', '4k'],
+  ['t5000', '5k'], ['t6300', '6.3k'], ['t8000', '8k'], ['t10000', '10k'],
+  ['t12500', '12.5k'], ['t16000', '16k'], ['t20000', '20k']
+];
+// Tabela 2 da NBR 10152:2017 (bandas 63 Hz..8 kHz)
+var NC_TABLE = {
+  15: [47, 36, 28, 22, 18, 14, 12, 11], 20: [50, 40, 33, 26, 22, 20, 17, 16],
+  25: [54, 44, 37, 31, 27, 24, 22, 22], 30: [57, 48, 41, 35, 32, 29, 28, 27],
+  35: [60, 52, 45, 40, 36, 34, 33, 32], 40: [64, 56, 50, 44, 41, 39, 38, 37],
+  45: [67, 60, 54, 49, 46, 44, 43, 42], 50: [71, 64, 58, 54, 51, 49, 48, 47],
+  55: [74, 67, 62, 58, 56, 54, 53, 52], 60: [77, 71, 66, 63, 60, 59, 58, 57],
+  65: [80, 75, 71, 68, 65, 64, 63, 62], 70: [84, 79, 75, 72, 71, 70, 68, 68]
+};
+var NC_STEPS = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70];
+var OCT8 = [
+  {label: '63', keys: ['t50', 't63', 't80']},
+  {label: '125', keys: ['t100', 't125', 't160']},
+  {label: '250', keys: ['t200', 't250', 't315']},
+  {label: '500', keys: ['t400', 't500', 't630']},
+  {label: '1k', keys: ['t800', 't1000', 't1250']},
+  {label: '2k', keys: ['t1600', 't2000', 't2500']},
+  {label: '4k', keys: ['t3150', 't4000', 't5000']},
+  {label: '8k', keys: ['t6300', 't8000', 't10000']}
+];
+function ncForBand(level, b) {
+  if (level <= NC_TABLE[15][b]) { return 15; }
+  if (level >= NC_TABLE[70][b]) { return 71; }
+  for (var i = 1; i < NC_STEPS.length; i++) {
+    var lo = NC_STEPS[i - 1], hi = NC_STEPS[i];
+    if (level <= NC_TABLE[hi][b]) {
+      return lo + 5 * (level - NC_TABLE[lo][b]) / (NC_TABLE[hi][b] - NC_TABLE[lo][b]);
+    }
+  }
+  return 71;
+}
 
 /* ---------------- API ---------------- */
 function api(path, opts) {
@@ -263,6 +308,142 @@ function chartBars(hours, w, h) {
   return s + '</svg>';
 }
 
+function chartSpectrum(vals, w, h) {
+  // vals: 31 níveis (ou null) na ordem T31 — barras estilo ConectaNOS
+  var L = 30, R = 6, T2 = 8, B = 22, lo = 20, hi = 80;
+  function y(v) { return T2 + (h - T2 - B) * (hi - Math.max(lo, Math.min(hi, v))) / (hi - lo); }
+  var s = '<svg class="chart" viewBox="0 0 ' + w + ' ' + h + '">' +
+    '<defs><linearGradient id="gb" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0" stop-color="#4FB8FF"/><stop offset="1" stop-color="#4FB8FF" stop-opacity=".3"/></linearGradient></defs>';
+  for (var g = lo; g <= hi; g += 20) {
+    s += '<line x1="' + L + '" y1="' + y(g) + '" x2="' + (w - R) + '" y2="' + y(g) +
+         '" stroke="#243144"/><text x="' + (L - 5) + '" y="' + (y(g) + 3) +
+         '" text-anchor="end" font-size="9" fill="#8296ab">' + g + '</text>';
+  }
+  var bw = (w - L - R) / 31;
+  for (var i = 0; i < 31; i++) {
+    var v = vals[i];
+    if (v != null && isFinite(v)) {
+      s += '<rect x="' + (L + i * bw + bw * 0.15) + '" y="' + y(v) + '" width="' + (bw * 0.7) +
+           '" height="' + Math.max(1.5, y(lo) - y(v)) + '" rx="1.6" fill="url(#gb)">' +
+           '<title>' + T31[i][1] + ' Hz: ' + fmt1(v) + ' dB</title></rect>';
+    }
+    if (i % 2 === 0) {
+      s += '<text x="' + (L + i * bw + bw / 2) + '" y="' + (h - 8) +
+           '" text-anchor="middle" font-size="7.6" fill="#8296ab">' + T31[i][1] + '</text>';
+    }
+  }
+  return s + '</svg>';
+}
+
+function chartNC(oct, ncRef, w, h) {
+  var L = 34, R = 56, T2 = 8, B = 22, lo = 10, hi = 90;
+  var pw = w - L - R, ph = h - T2 - B;
+  function px(b) { return L + pw * (b + 0.5) / 8; }
+  function py(v) { return T2 + ph * (hi - Math.max(lo, Math.min(hi, v))) / (hi - lo); }
+  var s = '<svg class="chart" viewBox="0 0 ' + w + ' ' + h + '">';
+  for (var g = 10; g <= 90; g += 20) {
+    s += '<line x1="' + L + '" y1="' + py(g) + '" x2="' + (w - R) + '" y2="' + py(g) +
+         '" stroke="#243144"/><text x="' + (L - 5) + '" y="' + (py(g) + 3) +
+         '" text-anchor="end" font-size="9" fill="#8296ab">' + g + '</text>';
+  }
+  var lnc = null, crit = -1;
+  for (var b2 = 0; b2 < 8; b2++) {
+    if (oct[b2] == null) { continue; }
+    var nb = ncForBand(oct[b2], b2);
+    if (lnc === null || nb > lnc) { lnc = nb; crit = b2; }
+  }
+  for (var i = 0; i < NC_STEPS.length; i++) {
+    var nc = NC_STEPS[i];
+    var isRef = (ncRef != null && nc === Number(ncRef));
+    var pts = [];
+    for (b2 = 0; b2 < 8; b2++) { pts.push(px(b2) + ',' + py(NC_TABLE[nc][b2])); }
+    s += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' +
+         (isRef ? '#ffd35a' : '#3c4d69') + '" stroke-width="' + (isRef ? 2 : 1) + '"' +
+         (isRef ? ' stroke-dasharray="5 4"' : '') + '/>' +
+         '<text x="' + (w - R + 5) + '" y="' + (py(NC_TABLE[nc][7]) + 3) +
+         '" font-size="8.6" font-weight="' + (isRef ? '800' : '600') + '" fill="' +
+         (isRef ? '#ffd35a' : '#5b6f8b') + '">NC-' + nc + '</text>';
+  }
+  var sp = [];
+  for (b2 = 0; b2 < 8; b2++) {
+    if (oct[b2] != null) { sp.push(px(b2) + ',' + py(oct[b2])); }
+    s += '<text x="' + px(b2) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="9.4" ' +
+         'fill="#8296ab" font-weight="600">' + OCT8[b2].label + '</text>';
+  }
+  if (sp.length > 1) {
+    s += '<polyline points="' + sp.join(' ') + '" fill="none" stroke="#4FB8FF" stroke-width="2.4" stroke-linejoin="round"/>';
+  }
+  for (b2 = 0; b2 < 8; b2++) {
+    if (oct[b2] == null) { continue; }
+    s += '<circle cx="' + px(b2) + '" cy="' + py(oct[b2]) + '" r="' + (b2 === crit ? 4.6 : 3.2) +
+         '" fill="' + (b2 === crit ? '#ff5a5a' : '#4FB8FF') + '" stroke="#0c1118" stroke-width="1.3"/>';
+  }
+  return {svg: s + '</svg>', lnc: lnc, crit: crit};
+}
+
+function ncVerdictHtml(lnc, crit, ncRef) {
+  if (lnc == null) { return '<div class="muted">aguardando dados do dia&hellip;</div>'; }
+  var ncShow = Math.ceil(Math.min(lnc, 71));
+  var head = 'L<sub style="font-size:9px;">NC</sub> do dia = ' +
+             (lnc > 70 ? '&gt; NC-70' : 'NC-' + ncShow) +
+             ' <span style="color:var(--cn-text-mute);font-size:12px;">(determinante ' +
+             OCT8[crit].label + ' Hz)</span>';
+  if (ncRef == null || !isFinite(Number(ncRef))) {
+    return '<div style="font-size:15px;font-weight:700;margin-top:10px;">' + head + '</div>';
+  }
+  var ref = Number(ncRef), diff = ncShow - ref;
+  var badge = (diff <= 0)
+    ? '<span style="display:inline-block;background:rgba(46,207,127,.12);border:1px solid rgba(46,207,127,.35);' +
+      'color:var(--cn-ok);font-weight:800;border-radius:999px;padding:7px 16px;margin-top:8px;">' +
+      '&#10003; ATENDE o alvo NC-' + ref + (diff < 0 ? ' (folga de ' + (-diff) + ' dB)' : '') + '</span>'
+    : '<span style="display:inline-block;background:rgba(255,90,90,.12);border:1px solid rgba(255,90,90,.4);' +
+      'color:var(--cn-alert);font-weight:800;border-radius:999px;padding:7px 16px;margin-top:8px;">' +
+      '&#9650; EXCEDE o alvo NC-' + ref + ' em ' + diff + ' dB</span>';
+  return '<div style="font-size:15px;font-weight:700;margin-top:10px;">' + head + '</div>' + badge;
+}
+
+function fetchSpectrumLatest(devId) {
+  var keys = T31.map(function (t) { return t[0]; }).join(',');
+  return api('/api/plugins/telemetry/DEVICE/' + devId + '/values/timeseries?keys=' + keys)
+    .then(function (j) {
+      return T31.map(function (t) {
+        var a = j[t[0]];
+        return (a && a.length) ? Number(a[0].value) : null;
+      });
+    });
+}
+
+function fetchDayOctaves(devId) {
+  // média de ENERGIA do dia por terço (60 baldes AVG-dB energizados) → oitavas
+  var t0 = hoje0(), t1 = Date.now();
+  var iv = Math.max(60000, Math.ceil((t1 - t0) / 60 / 60000) * 60000);
+  var keys = [];
+  OCT8.forEach(function (o) { keys = keys.concat(o.keys); });
+  return api('/api/plugins/telemetry/DEVICE/' + devId + '/values/timeseries?keys=' + keys.join(',') +
+             '&startTs=' + t0 + '&endTs=' + t1 + '&interval=' + iv + '&agg=AVG&limit=100')
+    .then(function (j) {
+      function eMean(arr) {
+        if (!arr || !arr.length) { return null; }
+        var e = 0, n = 0;
+        arr.forEach(function (p) {
+          var v = Number(p.value);
+          if (isFinite(v)) { e += Math.pow(10, v / 10); n++; }
+        });
+        return n ? 10 * Math.log10(e / n) : null;
+      }
+      return OCT8.map(function (o) {
+        var e = 0, ok = true;
+        o.keys.forEach(function (k) {
+          var v = eMean(j[k]);
+          if (v == null) { ok = false; return; }
+          e += Math.pow(10, v / 10);
+        });
+        return ok ? 10 * Math.log10(e) : null;
+      });
+    });
+}
+
 function limSchedule(d) {
   // degrau de limites de HOJE a partir dos atributos
   var a = d.attrs;
@@ -277,6 +458,7 @@ function limSchedule(d) {
 
 function viewDash(devId) {
   tabbar(true, 'dash');
+  stopDashTimers();
   var d = S.devices.filter(function (x) { return x.id === devId; })[0] || S.devices[0];
   if (!d) { screen().innerHTML = hdr('Dashboard') + '<div class="wrap"><div class="muted">Nenhum sensor.</div></div>'; return; }
   S.current = d.id;
@@ -334,14 +516,56 @@ function viewDash(devId) {
           chartLine(serie, limSchedule(d), 420, 220) +
           '<div class="chart-note">L<sub>Aeq</sub> [dB] m&eacute;dia por intervalo &middot; linha vermelha = limite vigente</div></div>' +
         '<div class="card"><div class="kpi-row">' +
-          '<div class="kpi"><div class="v">' + fmt1(d.latest.laeq) + '</div><div class="l">LAeq agora dB(A)</div></div>' +
+          '<div class="kpi"><div class="v" id="kpi-laeq">' + fmt1(d.latest.laeq) + '</div><div class="l">LAeq agora dB(A)</div></div>' +
           '<div class="kpi"><div class="v">' + fmt1(lamaxDia) + '</div><div class="l">LAmax hoje dB(A)</div></div>' +
-          '<div class="kpi"><div class="v">' + (d.latest.limite_atual_db != null ? d.latest.limite_atual_db : '--') +
+          '<div class="kpi"><div class="v" id="kpi-lim">' + (d.latest.limite_atual_db != null ? d.latest.limite_atual_db : '--') +
             '</div><div class="l">limite agora dB(A)</div></div>' +
         '</div></div>' +
+        '<div class="card"><h3 class="card-t">Espectro 1/3 de oitava &mdash; L<sub>Zeq,10s</sub> [dB]</h3>' +
+          '<div id="spec-box"><div class="muted">carregando&hellip;</div></div>' +
+          '<div class="chart-note">31 bandas &middot; atualiza a cada 10 s</div></div>' +
+        '<div class="card"><h3 class="card-t">Curvas NC (NBR 10152) &mdash; acumulado de hoje</h3>' +
+          '<div id="nc-box"><div class="muted">carregando&hellip;</div></div>' +
+          '<div id="nc-verdict"></div>' +
+          '<div class="chart-note">oitavas 63 Hz&ndash;8 kHz somadas dos ter&ccedil;os (&sect;7.5.5) &middot; alvo do ambiente: ' +
+            (a.ambiente ? esc(a.ambiente) : '?') + '</div></div>' +
       '</div>';
     if (hasGeo) { loadMap(Number(a.latitude), Number(a.longitude), d.label); }
+
+    function upSpec() {
+      Promise.all([
+        fetchSpectrumLatest(d.id),
+        api('/api/plugins/telemetry/DEVICE/' + d.id + '/values/timeseries?keys=laeq,limite_atual_db')
+          .catch(function () { return {}; })
+      ]).then(function (rr) {
+        var box = document.getElementById('spec-box');
+        if (box) { box.innerHTML = chartSpectrum(rr[0], 420, 170); }
+        var k1 = document.getElementById('kpi-laeq');
+        if (k1 && rr[1].laeq && rr[1].laeq.length) { k1.textContent = fmt1(Number(rr[1].laeq[0].value)); }
+        var k2 = document.getElementById('kpi-lim');
+        if (k2 && rr[1].limite_atual_db && rr[1].limite_atual_db.length) { k2.textContent = rr[1].limite_atual_db[0].value; }
+      }).catch(function () {});
+    }
+    function upNC() {
+      fetchDayOctaves(d.id).then(function (oct) {
+        var box = document.getElementById('nc-box');
+        if (!box) { return; }
+        var r2 = chartNC(oct, a.nc_referencia, 420, 230);
+        box.innerHTML = r2.svg;
+        var vv = document.getElementById('nc-verdict');
+        if (vv) { vv.innerHTML = ncVerdictHtml(r2.lnc, r2.crit, a.nc_referencia); }
+      }).catch(function () {});
+    }
+    upSpec();
+    upNC();
+    S.dashT10 = setInterval(upSpec, 10000);
+    S.dashT60 = setInterval(function () { if (location.hash.indexOf('#/dash') === 0) { viewDash(d.id); } }, 60000);
   });
+}
+
+function stopDashTimers() {
+  if (S.dashT10) { clearInterval(S.dashT10); S.dashT10 = null; }
+  if (S.dashT60) { clearInterval(S.dashT60); S.dashT60 = null; }
 }
 
 function loadMap(lat, lng, label) {
@@ -393,11 +617,16 @@ function viewPerfil() {
 }
 
 /* -------------- router + poll -------------- */
-function stopPoll() { if (S.timer) { clearInterval(S.timer); S.timer = null; } }
+function stopPoll() {
+  if (S.timer) { clearInterval(S.timer); S.timer = null; }
+  stopDashTimers();
+}
 function startPoll() {
   stopPoll();
   S.timer = setInterval(function () {
     if (!S.token) { return; }
+    // na tela do sensor quem atualiza são os timers próprios (10 s/60 s)
+    if (location.hash.indexOf('#/dash') === 0) { return; }
     loadDevices().then(route).catch(function () {});
   }, POLL_MS);
 }
@@ -412,10 +641,9 @@ function route() {
     if (h.indexOf('#/dash') === 0) {
       var id = h.split('/')[2] || S.current || (S.devices[0] && S.devices[0].id);
       viewDash(id);
-    } else if (h.indexOf('#/perfil') === 0) {
-      viewPerfil();
     } else {
-      viewInicio();
+      stopDashTimers();
+      if (h.indexOf('#/perfil') === 0) { viewPerfil(); } else { viewInicio(); }
     }
   }).catch(function () { viewLogin('Não foi possível carregar seus dados.'); });
 }
