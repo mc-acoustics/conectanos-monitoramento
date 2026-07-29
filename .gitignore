@@ -1,0 +1,20 @@
+# Segredos e configuração local — nunca commitar
+.env
+.env.*
+*.pem
+*.key
+secrets.*
+credentials*
+
+# Dependências e artefatos
+node_modules/
+dist/
+build/
+
+# Logs e temporários
+*.log
+*.tmp
+
+# Ferramentas locais
+.claude/
+CLAUDE.md
