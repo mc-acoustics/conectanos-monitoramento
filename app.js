@@ -5,7 +5,7 @@
 'use strict';
 
 var TB = 'https://thingsboard.nosconectados.com.br';
-var APP_VERSION = 'v0.2.0 — 2026-07-29';
+var APP_VERSION = 'v0.2.1 — 2026-10-06';
 var POLL_MS = 15000;
 
 var S = {
@@ -100,10 +100,13 @@ function loadUser() {
 }
 
 function loadDevices() {
-  var p = (S.user.authority === 'CUSTOMER_USER')
-    ? '/api/customer/' + S.user.customerId.id + '/deviceInfos?pageSize=100&page=0&type=DNMS'
-    : '/api/tenant/deviceInfos?pageSize=100&page=0&type=DNMS';
-  return api(p).then(function (page) {
+  // /api/user/devices (PE) vale p/ admin e cliente; no PE o
+  // /api/tenant/deviceInfos devolve 400 — fica só como fallback CE.
+  var q = '?pageSize=100&page=0&type=DNMS';
+  var ce = (S.user.authority === 'CUSTOMER_USER')
+    ? '/api/customer/' + S.user.customerId.id + '/deviceInfos' + q
+    : '/api/tenant/deviceInfos' + q;
+  return api('/api/user/devices' + q).catch(function () { return api(ce); }).then(function (page) {
     var list = page.data || [];
     return Promise.all(list.map(function (d) {
       var id = d.id.id;
