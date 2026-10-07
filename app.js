@@ -5,7 +5,7 @@
 'use strict';
 
 var TB = 'https://thingsboard.nosconectados.com.br';
-var APP_VERSION = 'v0.2.1 — 2026-10-06';
+var APP_VERSION = 'v0.2.2 — 2026-10-06';
 var POLL_MS = 15000;
 
 var S = {
@@ -209,7 +209,7 @@ function viewInicio() {
       '<div class="loc-addr"><span class="pin">&#9906;</span> ' + esc(d.attrs.empreendimento || '') +
         (d.attrs.descricao ? ' &middot; ' + esc(d.attrs.descricao) : '') + '</div>' +
       '<div class="loc-level"><b>' + fmt1(d.latest.laeq) + '</b><span class="un">dB(A)</span>' +
-        (d.latest.limite_atual_db != null ? '<span class="lim">limite ' + d.latest.limite_atual_db + '</span>' : '') + '</div>' +
+        (d.latest.limite_atual_db != null ? '<span class="lim">limite ' + fmt1(d.latest.limite_atual_db) + '</span>' : '') + '</div>' +
       '<div class="loc-status">' + statusHtml(d) +
         (d.attrs.ambiente ? '<span class="chip">' + esc(d.attrs.ambiente) + '</span>' : '') + '</div>' +
     '</div>';
@@ -504,8 +504,8 @@ function viewDash(devId) {
         '<div class="map-box" id="mapbox">' + (hasGeo ? '<div id="map"></div>' : 'sem coordenadas cadastradas') + '</div>' +
         '<div class="card"><h3 class="card-t">Limites estabelecidos</h3>' +
           '<div class="muted" style="text-align:left;font-size:12.5px;margin-bottom:4px;">' + normaTxt + '</div>' +
-          '<div class="limits-line"><span>' + hd2 + 'h</span><b>L<sub>Aeq</sub> ' + esc(a.limite_diurno_db || '?') +
-          ' dB</b><span>' + hn2 + 'h</span><b>L<sub>Aeq</sub> ' + esc(a.limite_noturno_db || '?') +
+          '<div class="limits-line"><span>' + hd2 + 'h</span><b>L<sub>Aeq</sub> ' + (a.limite_diurno_db != null ? fmt1(a.limite_diurno_db) : '?') +
+          ' dB</b><span>' + hn2 + 'h</span><b>L<sub>Aeq</sub> ' + (a.limite_noturno_db != null ? fmt1(a.limite_noturno_db) : '?') +
           ' dB</b><span>' + hd2 + 'h</span></div></div>' +
         '<div class="card"><h3 class="card-t">' + minMon + ' minutos monitorados hoje</h3>' +
           '<div class="bar-split"><div class="ok" style="width:' + pctOk.toFixed(1) + '%"></div>' +
@@ -521,7 +521,7 @@ function viewDash(devId) {
         '<div class="card"><div class="kpi-row">' +
           '<div class="kpi"><div class="v" id="kpi-laeq">' + fmt1(d.latest.laeq) + '</div><div class="l">LAeq agora dB(A)</div></div>' +
           '<div class="kpi"><div class="v">' + fmt1(lamaxDia) + '</div><div class="l">LAmax hoje dB(A)</div></div>' +
-          '<div class="kpi"><div class="v" id="kpi-lim">' + (d.latest.limite_atual_db != null ? d.latest.limite_atual_db : '--') +
+          '<div class="kpi"><div class="v" id="kpi-lim">' + fmt1(d.latest.limite_atual_db) +
             '</div><div class="l">limite agora dB(A)</div></div>' +
         '</div></div>' +
         '<div class="card"><h3 class="card-t">Espectro 1/3 de oitava &mdash; L<sub>Zeq,10s</sub> [dB]</h3>' +
@@ -546,7 +546,7 @@ function viewDash(devId) {
         var k1 = document.getElementById('kpi-laeq');
         if (k1 && rr[1].laeq && rr[1].laeq.length) { k1.textContent = fmt1(Number(rr[1].laeq[0].value)); }
         var k2 = document.getElementById('kpi-lim');
-        if (k2 && rr[1].limite_atual_db && rr[1].limite_atual_db.length) { k2.textContent = rr[1].limite_atual_db[0].value; }
+        if (k2 && rr[1].limite_atual_db && rr[1].limite_atual_db.length) { k2.textContent = fmt1(Number(rr[1].limite_atual_db[0].value)); }
       }).catch(function () {});
     }
     function upNC() {
