@@ -5,7 +5,7 @@
 'use strict';
 
 var TB = 'https://thingsboard.nosconectados.com.br';
-var APP_VERSION = 'v0.2.2 — 2026-10-06';
+var APP_VERSION = 'v0.2.3 — 2026-10-07';
 var POLL_MS = 15000;
 
 var S = {
@@ -249,11 +249,11 @@ function chartLine(series, limSteps, w, h) {
   // series: [[ts,val]...] · limSteps: [[ts,val]...] (degrau)
   var L = 34, R = 8, T = 8, B = 22;
   var t0 = hoje0(), t1 = Date.now();
-  var lo = 20, hi = 90;
+  var lo = 20, hi = 70;
   function x(t) { return L + (w - L - R) * (t - t0) / (t1 - t0); }
   function y(v) { return T + (h - T - B) * (hi - Math.max(lo, Math.min(hi, v))) / (hi - lo); }
   var s = '<svg class="chart" viewBox="0 0 ' + w + ' ' + h + '">';
-  for (var g = 20; g <= 90; g += 10) {
+  for (var g = lo; g <= hi; g += 10) {
     s += '<line x1="' + L + '" y1="' + y(g) + '" x2="' + (w - R) + '" y2="' + y(g) +
          '" stroke="#243144"/><text x="' + (L - 5) + '" y="' + (y(g) + 3) +
          '" text-anchor="end" font-size="9.5" fill="#8296ab">' + g + '</text>';
